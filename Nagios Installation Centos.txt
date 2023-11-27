@@ -1,0 +1,308 @@
+1.sed -i 's/SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
+2.setenforce 0
+3.yum install -y gcc glibc glibc-common wget unzip httpd php php-cli gd gd-devel openssl-devel net-snmp perl -y
+4. yum install -y make gettext autoconf net-snmp-utils epel-release automake
+5.cd /tmp
+6.wget -O nagioscore.tar.gz https://assets.nagios.com/downloads/nagioscore/releases/nagios-4.5.0.tar.gz
+7.tar xzf nagioscore.tar.gz
+8.cd nagios-4.5.0/
+9../configure
+10.make all
+11.make install-groups-users
+12.usermod -a -G nagios apache
+13.make install
+14.make install-commandmode
+15.make install-config
+16.make install-webconf
+17.make install-daemoninit 
+18.systemctl enable httpd.service 
+19.firewall-cmd --zone=public --add-port=80/tcp
+20.firewall-cmd --zone=public --add-port=80/tcp --permanent
+21. htpasswd -c /usr/local/nagios/etc/htpasswd.users nagiosadmin
+22. systemctl start httpd
+------------------------------------------------------------------
+
+Installing Nagios Plug-in
+
+1. yum install -y make gettext automake autoconf wget openssl-devel net-snmp net-snmp-utils epel-release
+2. yum install -y perl-Net-SNMP
+3. cd /tmp
+4. wget --no-check-certificate -O nagios-plugins.tar.gz https://github.com/nagios-plugins/nagios-plugins/archive/release-2.2.1.tar.gz
+5. tar zxf nagios-plugins.tar.gz
+6. cd /tmp/nagios-plugins-release-2.2.1/
+7. ./tools/setup
+8. ./configure
+9. make
+10. make install
+--------------------------------------------------------------------------
+Install Linux Host
+
+Configure EPEL repository
+1. yum install epel-release -y
+OR
+1. rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+2. yum -y install nrpe nagios-plugins-all
+3. vi /etc/nagios/nrpe.cfg
+allowed_hosts=127.0.0.1,nagios_server_ip
+4. vi /etc/nagios/nrpe.cfg
+command[check_users]=/usr/lib64/nagios/plugins/check_users -w 5 -c 10
+command[check_load]=/usr/lib64/nagios/plugins/check_load -w 15,10,5 -c 30,25,20
+command[check_root]=/usr/lib64/nagios/plugins/check_disk -w 20% -c 10% -p /dev/mapper/centos-root
+command[check_swap]=/usr/lib64/nagios/plugins/check_swap -w 20% -c 10%
+command[check_total_procs]=/usr/lib64/nagios/plugins/check_procs -w 150 -c 200
+5. systemctl start nrpe
+6. systemctl enable nrpe
+
+Configure nagios server
+
+7. yum -y install nagios-plugins-nrpe
+8. vi /usr/local/nagios/etc/nagios.cfg   ..... add...
+cfg_dir=/usr/local/nagios/etc/servers
+9. mkdir /usr/local/nagios/etc/servers
+10. vi /usr/local/nagios/etc/objects/commands.cfg
+# .check_nrpe. command definition
+define command{
+command_name check_nrpe
+command_line /usr/lib64/nagios/plugins/check_nrpe -H $HOSTADDRESS$ -t 30 -c $ARG1$
+}
+11. vi /usr/local/nagios/etc/servers/client1.cfg
+
+define host{
+
+            use                     linux-server
+            
+            host_name               centos7.client1
+            
+            alias                   centos7.client1
+            
+            address                 client_ip
+
+}
+12. verify nagios for errors
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+13. systemctl restart nagios
+14. firewall-cmd --permanent --add-port=5666/tcp
+15. firewall-cmd --reload
+-------------------------------------
+Running bash script as nrpe command on linux host
+Client side configuration
+create script /usr/lib64/nagios/plugins/disk_check.sh
+#!/bin/bash
+used_space=`df -h / | grep -v Filesystem | awk '{print $5}' | sed 's/%//g'`
+case $used_space in
+[1-84]*)
+echo "OK - $used_space% of disk space used."
+exit 0
+;;
+[85]*)
+echo "WARNING - $used_space% of disk space used."
+exit 1
+;;
+[86-100]*)
+echo "CRITICAL - $used_space% of disk space used."
+exit 2
+;;
+*)
+echo "UNKNOWN - $used_space% of disk space used."
+exit 3
+;;
+esac
+
+chmod +x /usr/lib64/nagios/plugins/disk_check.sh
+
+vi /etc/nagios/nrpe.cfg
+and add
+command[diskcheck_script]=/usr/lib64/nagios/plugins/disk_check.sh
+
+restart the nrpe service on client
+
+server side configuration
+vi /etc/nagios/objects/commands.cfg
+define command{
+        command_name    diskcheck_script
+        command_line    $USER1$/check_nrpe -H $HOSTADDRESS$ -c diskcheck_script
+        }
+save the file
+vi /etc/nagios/servers/client.cfg  (the cfg file for client where script is created) and add following.
+define service {
+        use                             generic-service
+        host_name                       centos7.client1
+        service_description             Custom Disk Checker Bash Script
+        check_command                   diskcheck_script
+        }
+
+save the file.
+Restart the nagios service.
+
+-----------------------------------------------------------------
+Add Windows Server to Nagios Core for monitoring
+
+1. Download NCP agent for windows from www.nagios.org/ncpa
+2. Install vcredist86.exe
+3. Double click and install the client.
+
+Configure Nagios Server
+4.mkdir /nagcore 
+5.cd /nagcore
+5. wget https://assets.nagios.com/downloads/ncpa/check_ncpa.tar.gz
+6. tar xvf check_ncpa.tar.gz
+7. mv check_ncpa.py /usr/local/nagios/libexec 
+8. chown nagios:nagios /usr/local/nagios/libexec/check_ncpa.py
+9. chmod 775 /usr/local/nagios/libexec/check_ncpa.py
+10. confirm with /usr/local/nagios/libexec/check_ncpa.py -V
+11. vi /usr/local/nagios/etc/objects/commands.cfg
+
+define command {
+    command_name    check_ncpa
+    command_line    $USER1$/check_ncpa.py -H $HOSTADDRESS$ $ARG1$
+}
+
+12. vi /usr/local/nagios/etc/servers/win2008srv1.client.cfg
+define host {
+    host_name               Win2008srv1
+    address                 Win_srv_IP
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M system/agent_version
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    contacts                nagiosadmin
+    notification_interval   60
+    notification_period     24x7
+    notifications_enabled   1
+    icon_image              ncpa.png
+    statusmap_image         ncpa.png
+    register                1
+}
+
+define service {
+    host_name               Win2008srv1
+    address                 Win_srv_IP
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M cpu/percent -w 20 -c 40 -q 'aggregate=avg'
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+
+define service {
+    host_name               Win2008srv1
+    address                 Win_srv_IP
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M memory/virtual -w 50 -c 80 -u G
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+
+define service {
+    host_name               Win2008srv1
+    address                 Win_srv_IP
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M processes -w 150 -c 200
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+ 
+13. verify with
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+
+14. systemctl restart nagios
+++++++++++++++++++++++++++++++++++++++++++++++++++++++Windows Host Installation++++++++++++++++++++++++++
+
+1. Download and install ncpa agent for Window.
+
+Note down the token.
+
+_______________________________Perform following on Nagios Server _____________________________________
+__________________________________________NCPA for windows installation ________________
+
+cd /tmp
+wget https://assets.nagios.com/downloads/ncpa/check_ncpa.tar.gz
+tar xvf check_ncpa.tar.gz
+chown nagios:nagios check_ncpa.py
+chmod 775 check_ncpa.py
+mv check_ncpa.py /usr/local/nagios/libexec
+
+
+
+-----------------define command------------------
+define command {
+    command_name    check_ncpa
+    command_line    $USER1$/check_ncpa.py -H $HOSTADDRESS$ $ARG1$
+}
+
+----------------------Define Windows Host and Service --------------------------
+
+ define host {
+    host_name               NCPA 2 Host
+    address                 192.168.1.10
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M system/agent_version
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    contacts                nagiosadmin
+    notification_interval   60
+    notification_period     24x7
+    notifications_enabled   1
+    icon_image              ncpa.png
+    statusmap_image         ncpa.png
+    register                1
+}
+
+define service {
+    host_name               NCPA 2 Host
+    service_description     CPU Usage
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M cpu/percent -w 20 -c 40 -q 'aggregate=avg'
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+
+define service {
+    host_name               NCPA 2 Host
+    service_description     Memory Usage
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M memory/virtual -w 50 -c 80 -u G
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+
+define service {
+    host_name               NCPA 2 Host
+    service_description     Process Count
+    check_command           check_ncpa!-t 'mytoken' -P 5693 -M processes -w 150 -c 200
+    max_check_attempts      5
+    check_interval          5
+    retry_interval          1
+    check_period            24x7
+    notification_interval   60
+    notification_period     24x7
+    contacts                nagiosadmin
+    register                1
+}
+
