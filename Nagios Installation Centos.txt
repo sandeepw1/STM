@@ -306,3 +306,7 @@ define service {
     register                1
 }
 
+Email notification configuration of Nagios server
+
+Follow steps at
+https://bobcares.com/blog/nagios-email-notification-configuration/
