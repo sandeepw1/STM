@@ -6,7 +6,7 @@ http {
 	server {
 		listen 80;
 		location / {
-		proxy_pass http://backend;
+		proxy_pass http://backend/;
 	}	
 	}
 }
@@ -14,7 +14,7 @@ http {
 nginx as reverse proxy
 
 location /examples {
-  proxy_pass http://192.168.10.1;
+  proxy_pass http://192.168.10.1/;
   proxy_buffering off;
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-Host $host;
