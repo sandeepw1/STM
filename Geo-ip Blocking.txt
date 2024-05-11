@@ -1,7 +1,7 @@
 Configure GEO IP Blocking - IPTABLES
 
 This requires iptables installed and running.
-
+yum install gcc gcc-c++ iptables-devel kernel-devel kernel-devel-`uname -r`
 cd /tmp
 
 wget https://inai.de/files/xtables-addons/xtables-addons-3.26.tar.xz
