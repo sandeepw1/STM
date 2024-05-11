@@ -1,0 +1,38 @@
+Configure GEO IP Blocking - IPTABLES
+
+This requires iptables installed and running.
+
+cd /tmp
+
+wget https://inai.de/files/xtables-addons/xtables-addons-3.26.tar.xz
+
+tar xvf xtables-addons-3.26.tar.xz 
+
+cd xtables-addons-3.26/
+
+vi extensions/Kbuild 
+
+Disable following modules
+#obj-${build_TARPIT}      += xt_TARPIT.o
+#obj-${build_condition}   += xt_condition.o
+#obj-${build_pknock}      += pknock/
+obj-${build_quota2}      += xt_quota2.o
+
+Save the file.
+
+./configure
+make
+make install
+
+modprobe xt_geoip
+
+mkdir /usr/share/xt_geoip/
+
+wget -q https://legacy-geoip-csv.ufficyo.com/Legacy-MaxMind-GeoIP-database.tar.gz -O - | tar -xvzf - -C /usr/share/xt_geoip
+
+cd /usr/share/xt_geoip
+
+cp LE/* .
+
+iptables -m geoip --help
+iptables -A OUTPUT -m geoip --src-cc in -p tcp --dport 443 -j DROP
